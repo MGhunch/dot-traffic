@@ -4,6 +4,7 @@
 
 import os
 import json
+import re
 from flask import Flask, request, jsonify
 from anthropic import Anthropic
 import httpx
@@ -21,6 +22,26 @@ AIRTABLE_CLIENTS_TABLE = 'Clients'
 
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 ANTHROPIC_MODEL = 'claude-sonnet-4-20250514'
+
+VALID_CLIENT_CODES = ['ONE', 'ONS', 'SKY', 'TOW', 'FIS', 'FST', 'WKA', 'LAB', 'EON', 'OTH']
+
+# Client name to code mapping
+CLIENT_NAME_MAPPING = {
+    'one nz': 'ONE',
+    'one': 'ONE',
+    'sky': 'SKY',
+    'sky tv': 'SKY',
+    'tower': 'TOW',
+    'tower insurance': 'TOW',
+    'fisher funds': 'FIS',
+    'fisherfunds': 'FIS',
+    'firestop': 'FST',
+    'whakarongorau': 'WKA',
+    'healthline': 'WKA',
+    'labour': 'LAB',
+    'eon fibre': 'EON',
+    'eonfibre': 'EON'
+}
 
 # Anthropic client
 anthropic_client = Anthropic(
@@ -61,13 +82,8 @@ def _get_airtable_headers():
 # ===================
 
 def get_project_by_job_number(job_number):
-    """Look up existing project by job number.
-    
-    Returns project details dict or None if not found.
-    Used to validate job numbers and enrich routing data.
-    """
+    """Look up existing project by job number."""
     if not AIRTABLE_API_KEY:
-        print("No Airtable API key configured")
         return None
     
     try:
@@ -80,13 +96,11 @@ def get_project_by_job_number(job_number):
         records = response.json().get('records', [])
         
         if not records:
-            print(f"Job '{job_number}' not found in Airtable")
             return None
         
         record = records[0]
         fields = record['fields']
         
-        # Get client name from linked record if available
         client_name = fields.get('Client', '')
         if isinstance(client_name, list):
             client_name = client_name[0] if client_name else ''
@@ -104,22 +118,16 @@ def get_project_by_job_number(job_number):
         }
         
     except Exception as e:
-        print(f"Error looking up project in Airtable: {e}")
+        print(f"Error looking up project: {e}")
         return None
 
 
 def get_active_jobs_for_client(client_code):
-    """Get all active (In Progress, On Hold) jobs for a client.
-    
-    Returns list of job summaries for matching against.
-    Used when trying to match emails to jobs without explicit job numbers.
-    """
-    if not AIRTABLE_API_KEY:
-        print("No Airtable API key configured")
+    """Get all active (In Progress, On Hold) jobs for a client."""
+    if not AIRTABLE_API_KEY or not client_code:
         return []
     
     try:
-        # Filter by client code prefix in Job Number and active status
         filter_formula = f"AND(FIND('{client_code}', {{Job Number}})=1, OR({{Status}}='In Progress', {{Status}}='On Hold'))"
         
         search_url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_PROJECTS_TABLE}"
@@ -142,33 +150,43 @@ def get_active_jobs_for_client(client_code):
         return jobs
         
     except Exception as e:
-        print(f"Error getting active jobs for client: {e}")
+        print(f"Error getting active jobs: {e}")
         return []
 
 
 # ===================
-# ROUTING HELPERS
+# JOB NUMBER EXTRACTION
 # ===================
 
-def extract_client_code_from_email(email):
-    """Extract likely client code from email domain"""
-    domain_mapping = {
-        'one.nz': 'ONE',
-        'sky.co.nz': 'SKY',
-        'tower.co.nz': 'TOW',
-        'fisherfunds.co.nz': 'FIS',
-        'firestop.co.nz': 'FST',
-        'whakarongorau.nz': 'WKA',
-        'labour.org.nz': 'LAB',
-        'eonfibre.co.nz': 'EON'
-    }
+def extract_job_number(text):
+    """Extract explicit job number from text (e.g., 'TOW 023').
     
-    if not email:
+    Returns job number string or None.
+    """
+    if not text:
         return None
     
-    email_lower = email.lower()
-    for domain, code in domain_mapping.items():
-        if domain in email_lower:
+    # Look for pattern: 3 letters + space + 3 digits
+    match = re.search(r'\b([A-Z]{3})\s+(\d{3})\b', text.upper())
+    if match:
+        code = match.group(1)
+        number = match.group(2)
+        if code in VALID_CLIENT_CODES:
+            return f"{code} {number}"
+    
+    return None
+
+
+def extract_client_code_from_content(text):
+    """Extract client code from client name mentioned in text."""
+    if not text:
+        return None
+    
+    text_lower = text.lower()
+    
+    # Check for client names in the text
+    for name, code in CLIENT_NAME_MAPPING.items():
+        if name in text_lower:
             return code
     
     return None
@@ -182,21 +200,12 @@ def extract_client_code_from_email(email):
 def traffic():
     """Route incoming emails/messages to the correct handler.
     
-    Accepts:
-        - emailContent: The email body or Teams message
-        - subjectLine: Email subject or channel name
-        - senderEmail: Sender's email address
-        - senderName: Sender's display name
-        - allRecipients: List of TO and CC emails
-        - hasAttachments: Boolean
-        - attachmentNames: List of filenames
-        - source: "email" or "teams" (optional, defaults to "email")
-    
-    Returns:
-        - route: Where to send this (triage, update, wip, etc.)
-        - confidence: high, medium, or low
-        - jobNumber: Extracted/matched job number (if found)
-        - Plus enriched data from Airtable
+    Logic:
+    1. Job number in subject/body? Use it directly.
+    2. No job number? Look for clues:
+       - Client name in email content
+       - Get active jobs for that client
+       - Let Claude match content to job names/descriptions
     """
     try:
         data = request.get_json()
@@ -215,13 +224,33 @@ def traffic():
         attachment_names = data.get('attachmentNames', [])
         source = data.get('source', 'email')
         
-        # Try to identify client from sender email
-        likely_client_code = extract_client_code_from_email(sender_email)
+        # STEP 1: Look for explicit job number
+        job_number = extract_job_number(subject)
+        if not job_number:
+            job_number = extract_job_number(content)
         
-        # Get active jobs for this client (if identified)
+        # If we have a job number, validate it exists
+        project = None
+        if job_number:
+            project = get_project_by_job_number(job_number)
+        
+        # STEP 2: If no job number (or invalid), find client and get active jobs
+        client_code = None
         active_jobs = []
-        if likely_client_code:
-            active_jobs = get_active_jobs_for_client(likely_client_code)
+        
+        if job_number:
+            # Extract client code from job number
+            client_code = job_number.split()[0] if job_number else None
+        
+        if not client_code:
+            # Look for client name in content
+            client_code = extract_client_code_from_content(subject)
+            if not client_code:
+                client_code = extract_client_code_from_content(content)
+        
+        # Get active jobs for matching
+        if client_code:
+            active_jobs = get_active_jobs_for_client(client_code)
         
         # Format active jobs for the prompt
         active_jobs_text = ""
@@ -231,7 +260,7 @@ def traffic():
                 for job in active_jobs
             ])
         else:
-            active_jobs_text = "No active jobs found for this client"
+            active_jobs_text = "No active jobs found"
         
         # Build content for Claude
         full_content = f"""Source: {source}
@@ -241,6 +270,10 @@ From: {sender_name} <{sender_email}>
 Recipients: {', '.join(all_recipients) if isinstance(all_recipients, list) else all_recipients}
 Has Attachments: {has_attachments}
 Attachment Names: {', '.join(attachment_names) if isinstance(attachment_names, list) else attachment_names}
+
+Extracted job number: {job_number if job_number else 'None found'}
+Job exists in system: {True if project else False}
+Client code: {client_code if client_code else 'Unknown'}
 
 Active jobs for this client:
 {active_jobs_text}
@@ -264,31 +297,36 @@ Message content:
         result_text = strip_markdown_json(result_text)
         routing = json.loads(result_text)
         
-        # If high confidence with job number, validate and enrich from Airtable
-        if routing.get('confidence') == 'high' and routing.get('jobNumber'):
-            project = get_project_by_job_number(routing['jobNumber'])
-            
-            if project:
-                # Enrich with project data
-                routing['jobName'] = project['jobName']
-                routing['clientName'] = project['clientName']
-                routing['currentRound'] = project['round']
-                routing['currentStage'] = project['stage']
-                routing['withClient'] = project['withClient']
-                routing['teamsChannelId'] = project['teamsChannelId']
-                routing['projectRecordId'] = project['recordId']
+        # If we already validated the project, enrich the response
+        if project and routing.get('jobNumber') == job_number:
+            routing['jobName'] = project['jobName']
+            routing['clientName'] = project['clientName']
+            routing['currentRound'] = project['round']
+            routing['currentStage'] = project['stage']
+            routing['withClient'] = project['withClient']
+            routing['teamsChannelId'] = project['teamsChannelId']
+            routing['projectRecordId'] = project['recordId']
+        
+        # If Claude picked a different job number, validate that one
+        elif routing.get('jobNumber') and routing.get('jobNumber') != job_number:
+            matched_project = get_project_by_job_number(routing['jobNumber'])
+            if matched_project:
+                routing['jobName'] = matched_project['jobName']
+                routing['clientName'] = matched_project['clientName']
+                routing['currentRound'] = matched_project['round']
+                routing['currentStage'] = matched_project['stage']
+                routing['withClient'] = matched_project['withClient']
+                routing['teamsChannelId'] = matched_project['teamsChannelId']
+                routing['projectRecordId'] = matched_project['recordId']
             else:
-                # Job number not found - switch to clarify
+                # Claude's job number doesn't exist
                 routing['route'] = 'clarify'
                 routing['confidence'] = 'low'
-                routing['reason'] = f"Job {routing['jobNumber']} not found in system"
-                routing['clarifyEmail'] = f"""<p>Hi {routing.get('senderName', 'there')},</p>
-<p>I couldn't find job <strong>{routing['jobNumber']}</strong> in our system.</p>
-<p>Could you double-check the job number? Or reply <strong>TRIAGE</strong> if this is a new job.</p>
-<p>Dot</p>"""
+                routing['reason'] = f"Matched job {routing['jobNumber']} not found in system"
         
-        # Add source to response
+        # Add source and client code to response
         routing['source'] = source
+        routing['clientCode'] = client_code
         
         return jsonify(routing)
         
