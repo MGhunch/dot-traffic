@@ -619,7 +619,10 @@ Message content:
                 routing['reason'] = f"Matched job {routing['jobNumber']} not found in system"
         
         routing['source'] = source
-        routing['clientCode'] = client_code
+        
+        # Only set clientCode if Claude didn't already provide one
+        if not routing.get('clientCode'):
+            routing['clientCode'] = client_code
         
         # ===================
         # STEP 6: LOG TO TRAFFIC TABLE
