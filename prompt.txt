@@ -85,7 +85,7 @@ JOB NUMBER PATTERN:
 - Also match underscore variant: ONE_125
 
 VALID CLIENT CODES:
-ONE, ONS, SKY, TOW, FIS, FST, WKA, HUN, LAB, EON, OTH
+ONE, ONS, ONB, SKY, TOW, FIS, FST, WKA, HUN, LAB, EON, OTH
 
 IF NO CLEAR JOB NUMBER:
 - Check sender's email domain → identify client
@@ -137,19 +137,37 @@ Based on intent and confidence:
 
 === CLIENT CODE MAPPING ===
 
-Identify client from email domain or content:
+Identify client from email domain, content, or direct code mention:
 
-@one.nz, One NZ → ONE
+ONE → One NZ (Marketing)
+ONS → One NZ Simplification
+ONB → One NZ Business
+SKY → Sky TV
+TOW → Tower Insurance
+FIS → Fisher Funds
+FST → Firestop
+WKA → Whakarongorau / Healthline
+HUN → Hunch (internal)
+LAB → Labour
+EON → Eon Fibre
+OTH → Other / Unknown
+
+EMAIL DOMAIN MAPPING:
+@one.nz → ONE (default)
 @one.nz + "Simplification" or from Tracey Barclay → ONS
-@sky.co.nz, Sky TV → SKY
-@tower.co.nz, Tower Insurance → TOW
-@fisherfunds.co.nz, Fisher Funds → FIS
-@firestop.co.nz, Firestop → FST
-@whakarongorau.nz, Healthline → WKA
-@labour.org.nz, Labour → LAB
-@eonfibre.co.nz, Eon Fibre → EON
+@one.nz + "Business" → ONB
+@sky.co.nz → SKY
+@tower.co.nz → TOW
+@fisherfunds.co.nz → FIS
+@firestop.co.nz → FST
+@whakarongorau.nz → WKA
+@labour.org.nz → LAB
+@eonfibre.co.nz → EON
 @hunch.co.nz → internal (look for actual client in content)
-Unknown → OTH
+
+DIRECT CODE RECOGNITION:
+If someone says "ONS WIP" or "ONB tracker", use that code directly.
+Codes are case-insensitive: "ons", "ONS", "Ons" all mean ONS.
 
 
 === OUTPUT FORMAT ===
@@ -247,6 +265,7 @@ CLARIFY EMAIL (Can't identify client or no possible jobs):
 6. Keep "reason" under 25 words
 7. Always identify intent even when asking for clarification
 8. @hunch.co.nz addresses are internal - look for the real client in content
+9. Recognize direct client codes (ONS, ONB, etc) anywhere in the message
 
 
 === EXAMPLES ===
@@ -364,10 +383,10 @@ Attachments: TOW 087 - December Newsletter v2.pdf
 }
 
 
-EXAMPLE 6: WIP request
+EXAMPLE 6: WIP request with direct client code
 
 Email from: michael@hunch.co.nz
-Subject: Sky WIP
+Subject: ONS WIP
 Body: Send me the WIP please
 
 → High confidence WIP
@@ -375,13 +394,13 @@ Body: Send me the WIP please
   "route": "wip",
   "confidence": "high",
   "jobNumber": null,
-  "clientCode": "SKY",
-  "clientName": "Sky",
+  "clientCode": "ONS",
+  "clientName": "One NZ Simplification",
   "intent": "WIP report requested",
   "senderEmail": "michael@hunch.co.nz",
   "senderName": "Michael",
   "source": "email",
-  "reason": "Explicit WIP request for Sky"
+  "reason": "Explicit WIP request for ONS (One NZ Simplification)"
 }
 
 
@@ -466,4 +485,25 @@ Attachments: FIS 019 - Nest Newsletter FINAL.pdf
   "senderName": "Emma",
   "source": "email",
   "reason": "Explicit file request with final document attached"
+}
+
+
+EXAMPLE 11: WIP request for One NZ Business
+
+Email from: michael@hunch.co.nz
+Subject: ONB WIP please
+Body: Can you send me the business WIP?
+
+→ High confidence WIP
+{
+  "route": "wip",
+  "confidence": "high",
+  "jobNumber": null,
+  "clientCode": "ONB",
+  "clientName": "One NZ Business",
+  "intent": "WIP report requested",
+  "senderEmail": "michael@hunch.co.nz",
+  "senderName": "Michael",
+  "source": "email",
+  "reason": "Explicit WIP request for ONB (One NZ Business)"
 }

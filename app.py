@@ -1,6 +1,6 @@
 # Dot Traffic
 # Intelligent routing layer for Hunch's agency workflow
-# Version 3.0 - With Traffic table for deduplication and clarify loops
+# Version 3.1 - Added ONS/ONB client codes
 
 import os
 import json
@@ -25,12 +25,20 @@ AIRTABLE_TRAFFIC_TABLE = 'Traffic'
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 ANTHROPIC_MODEL = 'claude-sonnet-4-20250514'
 
-VALID_CLIENT_CODES = ['ONE', 'ONS', 'SKY', 'TOW', 'FIS', 'FST', 'WKA', 'LAB', 'EON', 'OTH']
+VALID_CLIENT_CODES = ['ONE', 'ONS', 'ONB', 'SKY', 'TOW', 'FIS', 'FST', 'WKA', 'HUN', 'LAB', 'EON', 'OTH']
 
 # Client name to code mapping
 CLIENT_NAME_MAPPING = {
     'one nz': 'ONE',
     'one': 'ONE',
+    'ons': 'ONS',
+    'onb': 'ONB',
+    'simplification': 'ONS',
+    'one nz simplification': 'ONS',
+    'one nz - simplification': 'ONS',
+    'business': 'ONB',
+    'one nz business': 'ONB',
+    'one nz - business': 'ONB',
     'sky': 'SKY',
     'sky tv': 'SKY',
     'tower': 'TOW',
@@ -42,7 +50,8 @@ CLIENT_NAME_MAPPING = {
     'healthline': 'WKA',
     'labour': 'LAB',
     'eon fibre': 'EON',
-    'eonfibre': 'EON'
+    'eonfibre': 'EON',
+    'hunch': 'HUN'
 }
 
 # Anthropic client
@@ -293,13 +302,23 @@ def extract_job_number(text):
 
 
 def extract_client_code_from_content(text):
-    """Extract client code from client name mentioned in text."""
+    """Extract client code from client name mentioned in text.
+    
+    Also checks for direct client codes (ONS, ONB, etc).
+    """
     if not text:
         return None
     
     text_lower = text.lower()
+    text_upper = text.upper()
     
-    # Check for client names in the text
+    # First check for direct client codes as standalone words
+    for code in VALID_CLIENT_CODES:
+        # Look for the code as a standalone word (not part of another word)
+        if re.search(r'\b' + code + r'\b', text_upper):
+            return code
+    
+    # Then check for client names in the text
     for name, code in CLIENT_NAME_MAPPING.items():
         if name in text_lower:
             return code
@@ -639,8 +658,8 @@ def health():
     return jsonify({
         'status': 'healthy',
         'service': 'Dot Traffic',
-        'version': '3.0',
-        'features': ['deduplication', 'clarify-loop']
+        'version': '3.1',
+        'features': ['deduplication', 'clarify-loop', 'ons-onb-support']
     })
 
 
