@@ -171,7 +171,10 @@ def log_to_traffic_table(internet_message_id, conversation_id, route, status, jo
         }
         
         response = httpx.post(create_url, headers=_get_airtable_headers(), json=record_data, timeout=10.0)
-        response.raise_for_status()
+        
+        if response.status_code != 200:
+            print(f"Airtable rejected Traffic log: {response.status_code} - {response.text}")
+            return None
         
         return response.json().get('id')
         
