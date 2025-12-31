@@ -232,6 +232,13 @@ def get_project_by_job_number(job_number):
         if isinstance(client_name, list):
             client_name = client_name[0] if client_name else ''
         
+        # Extract client code from job number to look up Team ID
+        client_code = job_number.split()[0] if job_number else None
+        team_id = None
+        
+        if client_code:
+            team_id = get_team_id_for_client(client_code)
+        
         return {
             'recordId': record['id'],
             'jobNumber': fields.get('Job Number', job_number),
@@ -241,11 +248,36 @@ def get_project_by_job_number(job_number):
             'status': fields.get('Status', ''),
             'round': fields.get('Round', 0) or 0,
             'withClient': fields.get('With Client?', False),
-            'teamsChannelId': fields.get('Teams Channel ID', None)
+            'teamsChannelId': fields.get('Teams Channel ID', None),
+            'teamId': team_id
         }
         
     except Exception as e:
         print(f"Error looking up project: {e}")
+        return None
+
+
+def get_team_id_for_client(client_code):
+    """Look up Team ID from Clients table by client code."""
+    if not AIRTABLE_API_KEY or not client_code:
+        return None
+    
+    try:
+        search_url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CLIENTS_TABLE}"
+        params = {'filterByFormula': f"{{Client code}}='{client_code}'"}
+        
+        response = httpx.get(search_url, headers=_get_airtable_headers(), params=params, timeout=10.0)
+        response.raise_for_status()
+        
+        records = response.json().get('records', [])
+        
+        if not records:
+            return None
+        
+        return records[0]['fields'].get('Teams ID', None)
+        
+    except Exception as e:
+        print(f"Error looking up Team ID: {e}")
         return None
 
 
@@ -454,6 +486,7 @@ def traffic():
                         'currentStage': project['stage'],
                         'withClient': project['withClient'],
                         'teamsChannelId': project['teamsChannelId'],
+                        'teamId': project['teamId'],
                         'projectRecordId': project['recordId'],
                         'reason': 'Job number provided in clarify reply',
                         'senderEmail': sender_email,
@@ -499,6 +532,7 @@ def traffic():
                             'currentStage': project['stage'],
                             'withClient': project['withClient'],
                             'teamsChannelId': project['teamsChannelId'],
+                            'teamId': project['teamId'],
                             'projectRecordId': project['recordId'],
                             'reason': 'User confirmed suggested job',
                             'senderEmail': sender_email,
@@ -603,6 +637,7 @@ Message content:
             routing['currentStage'] = project['stage']
             routing['withClient'] = project['withClient']
             routing['teamsChannelId'] = project['teamsChannelId']
+            routing['teamId'] = project['teamId']
             routing['projectRecordId'] = project['recordId']
         
         # If Claude picked a different job number, validate that one
@@ -615,6 +650,7 @@ Message content:
                 routing['currentStage'] = matched_project['stage']
                 routing['withClient'] = matched_project['withClient']
                 routing['teamsChannelId'] = matched_project['teamsChannelId']
+                routing['teamId'] = matched_project['teamId']
                 routing['projectRecordId'] = matched_project['recordId']
             else:
                 routing['route'] = 'clarify'
