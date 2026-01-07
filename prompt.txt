@@ -138,6 +138,7 @@ Based on intent and confidence:
 | FILE | High | Route to file |
 | FILE | Not high | Return confirm response |
 | UNCLEAR | Any | Return clarify response |
+| TODO | (no job needed) | Route to todo
 
 
 === CLIENT CODE MAPPING ===
@@ -268,7 +269,7 @@ CLARIFY EMAIL (Job confirmed, no detail):
 
 === RULES ===
 
-1. TRIAGE, WIP, and TRACKER don't need job numbers - route on intent alone
+1. TRIAGE, WIP, TODO and TRACKER don't need job numbers - route on intent alone
 2. Job number in filename beats job number in body
 3. Never invent a job number - if you can't find one, ask
 4. External recipient + attachments + handover language = work-to-client
