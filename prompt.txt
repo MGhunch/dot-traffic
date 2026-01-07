@@ -43,19 +43,20 @@ UPDATE - They want to log progress or change status
 - Usually: quick note about where things are at
 - Could include: stage change, live date, blockers
 
-TO DO - They want their daily task list
-- Look for: "to do", "to do list", "what's on today", "my tasks", "daily briefing"
-- Usually: short request for personal daily overview
-- Example: "Send me my to do list", "What's on today?"
+TODO - They want their daily task list
+- Look for: "to do", "to do list", "what's on today", "my tasks", "daily briefing", "latest to do"
+- Usually: short personal request, NO client name.
+- Example: "Send me my to do list", "What's on today?", "Throw me the latest to do"
 
 WORK-TO-CLIENT - They're sending deliverables to a client
 - Look for: Dot CC'd, external recipient, attachments, handover language
 - Language: "please find attached", "here's the latest", "for your review"
 - Always: attachments + external recipient + sounds like a handover
 
-WIP - They want a Work In Progress report
+WIP - They want a Work In Progress report for a specific client
 - Look for: "WIP", "work in progress", "status on [client] projects"
-- Usually: short request, often just "WIP for Sky please"
+- Usually: short request with a client name, e.g. "WIP for Sky please"
+- ALWAYS includes a client name - if no client mentioned, it's probably TODO
 
 TRACKER - They want a finance/tracker report
 - Look for: "tracker", "finance report", "quarterly numbers", "spend summary"
